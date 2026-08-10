@@ -11,9 +11,9 @@ from curl_cffi import requests as curl_requests
 app = Flask(__name__, static_folder='../frontend', static_url_path='')
 CORS(app)
 
-# Récupération de l'URL PostgreSQL depuis la variable d'environnement (ou fallback local)
+# Récupération des variables d'environnement
 DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://user:pass@localhost:5432/techflip")
-DISCORD_WEBHOOK_URL = os.getenv("DISCORD_WEBHOOK_URL", "TON_WEBHOOK_DISCORD")
+DISCORD_WEBHOOK_URL = os.getenv("DISCORD_WEBHOOK_URL", "")
 
 # --- BASE DE DONNÉES POSTGRESQL ---
 def get_db():
@@ -59,13 +59,20 @@ def run_vinted_bot():
                         if item_id not in seen_ids:
                             seen_ids.add(item_id)
                             # Alerte Discord
-                            payload = {"embeds": [{"title": f"💻 {item.get('title')}", "url": item.get('url'), "description": f"Prix: {item.get('price')}€"}]}
-                            curl_requests.post(DISCORD_WEBHOOK_URL, json=payload, timeout=5)
+                            payload = {
+                                "embeds": [{
+                                    "title": f"💻 {item.get('title')}", 
+                                    "url": item.get('url'), 
+                                    "description": f"Prix: **{item.get('price')} €**"
+                                }]
+                            }
+                            if DISCORD_WEBHOOK_URL and "https://" in DISCORD_WEBHOOK_URL:
+                                curl_requests.post(DISCORD_WEBHOOK_URL, json=payload, timeout=5)
                 time.sleep(random.randint(5, 10))
         except Exception as e:
             print(f"[-] Erreur Bot Vinted: {e}")
             
-        time.sleep(60) # Pause de 1 minute entre deux scans
+        time.sleep(60)
 
 # --- ROUTES API ---
 @app.route('/')
@@ -80,7 +87,11 @@ def health_check():
 def get_pcs():
     conn = get_db()
     cursor = conn.cursor()
-    cursor.execute("SELECT * FROM pcs ORDER BY id DESC")
+    # Cast explicite des NUMERIC en float pour éviter l'erreur de sérialisation JSON
+    cursor.execute("""
+        SELECT id, name, buy_price::float, repair_cost::float, target_price::float, status, created_at 
+        FROM pcs ORDER BY id DESC
+    """)
     pcs = cursor.fetchall()
     cursor.close()
     conn.close()
@@ -101,10 +112,31 @@ def add_pc():
     conn.close()
     return jsonify({"id": new_id}), 201
 
+@app.route('/api/pcs/<int:pc_id>/status', methods=['PUT'])
+def update_status(pc_id):
+    data = request.json
+    new_status = data.get('status')
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("UPDATE pcs SET status = %s WHERE id = %s", (new_status, pc_id))
+    conn.commit()
+    cursor.close()
+    conn.close()
+    return jsonify({"message": "Statut mis à jour"}), 200
+
+@app.route('/api/pcs/<int:pc_id>', methods=['DELETE'])
+def delete_pc(pc_id):
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("DELETE FROM pcs WHERE id = %s", (pc_id,))
+    conn.commit()
+    cursor.close()
+    conn.close()
+    return jsonify({"message": "PC supprimé"}), 200
+
 # --- DÉMARRAGE ---
 init_db()
 
-# Démarrage du bot dans un thread séparé pour ne pas bloquer Flask
 bot_thread = threading.Thread(target=run_vinted_bot, daemon=True)
 bot_thread.start()
 
