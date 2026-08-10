@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html lang="fr" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tech Flip Tracker API</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-slate-900 text-slate-100 min-h-screen font-sans pb-10">
+
+    <header class="bg-slate-800 border-b border-slate-700 p-4 sticky top-0 z-10 shadow-lg">
+        <div class="max-w-5xl mx-auto flex justify-between items-center">
+            <h1 class="text-xl font-bold text-indigo-400">💻 TechFlip Tracker (SQLite API)</h1>
+            <button onclick="toggleModal()" class="bg-indigo-600 hover:bg-indigo-500 text-white font-medium px-4 py-2 rounded-lg text-sm transition">
+                + Ajouter un PC
+            </button>
+        </div>
+    </header>
+
+    <main class="max-w-5xl mx-auto p-4 space-y-6">
+        <!-- Stats Overview -->
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div class="bg-slate-800 p-4 rounded-xl border border-slate-700">
+                <p class="text-slate-400 text-sm">Bénéfice Total Réalisé</p>
+                <p id="stat-profit" class="text-2xl font-bold text-emerald-400">0 €</p>
+            </div>
+            <div class="bg-slate-800 p-4 rounded-xl border border-slate-700">
+                <p class="text-slate-400 text-sm">PC en Cours</p>
+                <p id="stat-active" class="text-2xl font-bold text-amber-400">0</p>
+            </div>
+            <div class="bg-slate-800 p-4 rounded-xl border border-slate-700">
+                <p class="text-slate-400 text-sm">PC Vendus</p>
+                <p id="stat-sold" class="text-2xl font-bold text-indigo-400">0</p>
+            </div>
+        </div>
+
+        <!-- Tableau -->
+        <div class="bg-slate-800 rounded-xl border border-slate-700 overflow-hidden">
+            <div class="p-4 border-b border-slate-700"><h2 class="font-bold text-lg">Inventaire</h2></div>
+            <div class="overflow-x-auto">
+                <table class="w-full text-left text-sm">
+                    <thead class="bg-slate-900/50 text-slate-400 uppercase text-xs">
+                        <tr>
+                            <th class="p-3">Matériel</th>
+                            <th class="p-3">Statut</th>
+                            <th class="p-3">Achat + Frais</th>
+                            <th class="p-3">Prix Vente</th>
+                            <th class="p-3">Marge Prévue / Réelle</th>
+                            <th class="p-3 text-right">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="pc-list" class="divide-y divide-slate-700"></tbody>
+                </table>
+            </div>
+        </div>
+    </main>
+
+    <!-- Modal Formulaire -->
+    <div id="modal" class="fixed inset-0 bg-black/70 hidden items-center justify-center p-4 z-50">
+        <div class="bg-slate-800 rounded-xl max-w-md w-full p-6 border border-slate-700 space-y-4">
+            <h3 class="text-lg font-bold">Nouveau Projet PC</h3>
+            <form id="pc-form" onsubmit="savePC(event)" class="space-y-3">
+                <div>
+                    <label class="block text-xs text-slate-400 mb-1">Modèle / Description</label>
+                    <input type="text" id="name" required class="w-full bg-slate-900 border border-slate-700 rounded p-2 text-sm">
+                </div>
+                <div class="grid grid-cols-2 gap-2">
+                    <div>
+                        <label class="block text-xs text-slate-400 mb-1">Prix Achat (€)</label>
+                        <input type="number" id="buyPrice" required step="0.01" class="w-full bg-slate-900 border border-slate-700 rounded p-2 text-sm">
+                    </div>
+                    <div>
+                        <label class="block text-xs text-slate-400 mb-1">Frais Répa (€)</label>
+                        <input type="number" id="repairCost" value="0" step="0.01" class="w-full bg-slate-900 border border-slate-700 rounded p-2 text-sm">
+                    </div>
+                </div>
+                <div class="grid grid-cols-2 gap-2">
+                    <div>
+                        <label class="block text-xs text-slate-400 mb-1">Prix Vente (€)</label>
+                        <input type="number" id="targetPrice" required step="0.01" class="w-full bg-slate-900 border border-slate-700 rounded p-2 text-sm">
+                    </div>
+                    <div>
+                        <label class="block text-xs text-slate-400 mb-1">Statut</label>
+                        <select id="status" class="w-full bg-slate-900 border border-slate-700 rounded p-2 text-sm">
+                            <option value="En réparation">🔧 En réparation</option>
+                            <option value="En vente">🏷️ En vente</option>
+                            <option value="Vendu">✅ Vendu</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="flex justify-end gap-2 pt-2">
+                    <button type="button" onclick="toggleModal()" class="px-4 py-2 bg-slate-700 rounded text-sm">Annuler</button>
+                    <button type="submit" class="px-4 py-2 bg-indigo-600 rounded text-sm font-medium">Enregistrer</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <script>
+        const API_URL = 'http://localhost:5000/api/pcs';
+
+        function toggleModal() {
+            document.getElementById('modal').classList.toggle('hidden');
+            document.getElementById('modal').classList.toggle('flex');
+        }
+
+        async function fetchPCs() {
+            try {
+                const res = await fetch(API_URL);
+                const pcs = await res.json();
+                render(pcs);
+            } catch (err) {
+                console.error("Erreur serveur :", err);
+            }
+        }
+
+        async function savePC(e) {
+            e.preventDefault();
+            const data = {
+                name: document.getElementById('name').value,
+                buy_price: parseFloat(document.getElementById('buyPrice').value),
+                repair_cost: parseFloat(document.getElementById('repairCost').value),
+                target_price: parseFloat(document.getElementById('targetPrice').value),
+                status: document.getElementById('status').value
+            };
+
+            await fetch(API_URL, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(data)
+            });
+
+            document.getElementById('pc-form').reset();
+            toggleModal();
+            fetchPCs();
+        }
+
+        async function updateStatus(id, newStatus) {
+            await fetch(`${API_URL}/${id}/status`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ status: newStatus })
+            });
+            fetchPCs();
+        }
+
+        async function deletePC(id) {
+            if(!confirm("Supprimer ce PC ?")) return;
+            await fetch(`${API_URL}/${id}`, { method: 'DELETE' });
+            fetchPCs();
+        }
+
+        function render(pcs) {
+            const tbody = document.getElementById('pc-list');
+            tbody.innerHTML = '';
+            let totalProfit = 0, activeCount = 0, soldCount = 0;
+
+            pcs.forEach(pc => {
+                const totalCost = pc.buy_price + pc.repair_cost;
+                const margin = pc.target_price - totalCost;
+
+                if(pc.status === 'Vendu') { totalProfit += margin; soldCount++; } 
+                else { activeCount++; }
+
+                tbody.innerHTML += `
+                    <tr class="hover:bg-slate-800/50">
+                        <td class="p-3 font-medium">${pc.name}</td>
+                        <td class="p-3">
+                            <select onchange="updateStatus(${pc.id}, this.value)" class="text-xs border rounded px-2 py-1 bg-slate-900 border-slate-700">
+                                <option value="En réparation" ${pc.status==='En réparation'?'selected':''}>🔧 En réparation</option>
+                                <option value="En vente" ${pc.status==='En vente'?'selected':''}>🏷️ En vente</option>
+                                <option value="Vendu" ${pc.status==='Vendu'?'selected':''}>✅ Vendu</option>
+                            </select>
+                        </td>
+                        <td class="p-3">${totalCost.toFixed(2)} €</td>
+                        <td class="p-3">${pc.target_price.toFixed(2)} €</td>
+                        <td class="p-3 font-bold ${margin >= 0 ? 'text-emerald-400' : 'text-rose-400'}">+${margin.toFixed(2)} €</td>
+                        <td class="p-3 text-right">
+                            <button onclick="deletePC(${pc.id})" class="text-slate-500 hover:text-rose-400">🗑️</button>
+                        </td>
+                    </tr>
+                `;
+            });
+
+            document.getElementById('stat-profit').innerText = totalProfit.toFixed(2) + ' €';
+            document.getElementById('stat-active').innerText = activeCount;
+            document.getElementById('stat-sold').innerText = soldCount;
+        }
+
+        fetchPCs();
+    </script>
+</body>
+</html>

@@ -1,0 +1,12 @@
+# Environnement Python & Cache
+__pycache__/
+*.py[cod]
+venv/
+.env
+
+# Base de données SQLite locale
+backend/*.db
+
+# IDE
+.vscode/
+.idea/
